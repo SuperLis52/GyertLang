@@ -40,18 +40,26 @@ def get_lang_settings(lang_code: str):
         }
 
 async def get_llm_response(chat_id: int, user_text: str) -> str:
-    if chat_id not in user_data:
+    # 🛡 Защита от очистки памяти: создаем структуру, если она исчезла
+    if chat_id not in user_data or "lang" not in user_data[chat_id]:
         user_data[chat_id] = {"lang": "en", "history": []}
     
+    if "history" not in user_data[chat_id] or not isinstance(user_data[chat_id]["history"], list):
+        user_data[chat_id]["history"] = []
+        
     settings = get_lang_settings(user_data[chat_id]["lang"])
     
-    if not user_data[chat_id]["history"]:
-        user_data[chat_id]["history"].append({"role": "system", "content": settings["prompt"]})
+    # Гарантируем, что первым сообщением всегда идет объект с правильной ролью system
+    if not user_data[chat_id]["history"] or user_data[chat_id]["history"][0].get("role") != "system":
+        user_data[chat_id]["history"].insert(0, {"role": "system", "content": settings["prompt"]})
     
-    user_data[chat_id]["history"].append({"role": "user", "content": user_text})
+    # Добавляем сообщение пользователя строго в виде объекта
+    user_data[chat_id]["history"].append({"role": "user", "content": str(user_text)})
     
+    # Ограничиваем глубину контекста диалога
     if len(user_data[chat_id]["history"]) > 11:
-        user_data[chat_id]["history"] = [user_data[chat_id]["history"]] + user_data[chat_id]["history"][-10:]
+        # Сохраняем системный промпт на 0-м месте, берем последние 10 сообщений
+        user_data[chat_id]["history"] = [user_data[chat_id]["history"][0]] + user_data[chat_id]["history"][-10:]
 
     loop = asyncio.get_event_loop()
     response = await loop.run_in_executor(
@@ -136,7 +144,6 @@ async def handle_voice(message: types.Message):
     file_on_disk = f"{file_id}.ogg"
     
     try:
-        # ПРАВИЛЬНЫЙ СПОСОБ СКАЧИВАНИЯ ДЛЯ AIOGRAM 3.X:
         await bot.download(file=file_id, destination=file_on_disk)
         
         user_text = await transcribe_audio(file_on_disk)
@@ -148,7 +155,10 @@ async def handle_voice(message: types.Message):
             await message.bot.send_chat_action(chat_id=message.chat.id, action="record_voice")
             voice_output = f"reply_{file_id}.mp3"
             
-            settings = get_lang_settings(user_data[message.chat.id]["lang"])
+            # На всякий случай проверяем существование данных перед озвучкой
+            lang_code = user_data.get(message.chat.id, {}).get("lang", "en")
+            settings = get_lang_settings(lang_code)
+            
             communicate = edge_tts.Communicate(ai_response, settings["voice"])
             await communicate.save(voice_output)
             
