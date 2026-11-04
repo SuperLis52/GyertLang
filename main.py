@@ -10,7 +10,7 @@ import edge_tts
 from aiohttp import web
 
 # ==========================================
-# 🔑 ВСТАВЬТЕ ВАШИ ТОКЕНЫ В КАВЫЧКИ НИЖЕ:
+# 🔑 ВАШИ ТОКЕНЫ АВТОМАТИЧЕСКИ ПОДСТАВЛЕНЫ:
 # ==========================================
 BOT_TOKEN = "8717348381:AAHZT3SYY4ZbERM5HpObMSzGaaQRlOWe2cg"
 GROQ_API_KEY = "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"
@@ -56,7 +56,7 @@ async def get_llm_response(chat_id: int, user_text: str) -> str:
     response = await loop.run_in_executor(
         None, 
         lambda: groq_client.chat.completions.create(
-            model="llama3-8b-8192",
+            model="llama-3.1-8b-instant",
             messages=user_data[chat_id]["history"],
             temperature=0.7,
         )
@@ -125,10 +125,8 @@ async def handle_text(message: types.Message):
         ai_response = await get_llm_response(message.chat.id, message.text)
         await message.answer(ai_response, reply_markup=get_translate_keyboard())
     except Exception as e:
-        # Бот напишет точную причину ошибки прямо вам в чат!
-        await message.answer(f"⚠️ Ошибка ИИ:\n`{str(e)}`邊", parse_mode="Markdown")
+        await message.answer(f"⚠️ Ошибка ИИ:\n`{str(e)}`", parse_mode="Markdown")
         print(f"Error LLM: {e}")
-
 
 @dp.message(BotStates.chatting, F.voice)
 async def handle_voice(message: types.Message):
@@ -162,7 +160,7 @@ async def handle_voice(message: types.Message):
             print(f"Audio error: {audio_error}")
             
     except Exception as e:
-        await message.answer("Не удалось распознать голос. Пожалуйста, попробуй еще раз.")
+        await message.answer(f"⚠️ Ошибка обработки звука:\n`{str(e)}`", parse_mode="Markdown")
         print(f"Voice General Error: {e}")
     finally:
         if os.path.exists(file_on_disk):
@@ -181,7 +179,7 @@ async def process_translation(callback_query: types.CallbackQuery):
         response = await loop.run_in_executor(
             None, 
             lambda: groq_client.chat.completions.create(
-                model="llama3-8b-8192",
+                model="llama-3.1-8b-instant",
                 messages=[{"role": "user", "content": translation_prompt}],
                 temperature=0.3,
             )
@@ -196,7 +194,6 @@ async def process_translation(callback_query: types.CallbackQuery):
     except Exception as e:
         print(f"Translation error: {e}")
 
-# Простейший веб-сервер, чтобы ублажить Render и занять порт
 async def handle_web(request):
     return web.Response(text="GyertLang Is Running Live!")
 
@@ -205,20 +202,14 @@ async def start_web_server():
     app.router.add_get('/', handle_web)
     runner = web.AppRunner(app)
     await runner.setup()
-    # Читем порт, который выдает Render, или по дефолту берем 10000
     port = int(os.environ.get("PORT", 10000))
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
-    print(f"Веб-сервер успешно запущен на порту {port}")
+    print(f"Веб-сервер запущен на порту {port}")
 
 async def main():
-    # Жёстко удаляем старые вебхуки/сессии, чтобы убрать ошибку TelegramConflictError
     await bot.delete_webhook(drop_pending_updates=True)
-    print("Старые сессии Телеграм успешно сброшены!")
-    
-    # Запускаем фоновый веб-сервер для Render
     asyncio.create_task(start_web_server())
-    
     print("Бот GyertLang перезапущен и готов к работе!")
     await dp.start_polling(bot)
 
