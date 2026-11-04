@@ -53,7 +53,7 @@ async def get_llm_response(chat_id: int, user_text: str) -> str:
     user_data[chat_id]["history"].append({"role": "user", "content": user_text})
     
     if len(user_data[chat_id]["history"]) > 11:
-        user_data[chat_id]["history"] = [user_data[chat_id]["history"]] + user_data[chat_id]["history"][-10:]
+        user_data[chat_id]["history"] = [user_data[chat_id]["history"][0]] + user_data[chat_id]["history"][-10:]
 
     loop = asyncio.get_event_loop()
     response = await loop.run_in_executor(
@@ -65,7 +65,7 @@ async def get_llm_response(chat_id: int, user_text: str) -> str:
         )
     )
     
-    ai_text = response.choices.message.content
+    ai_text = response.choices[0].message.content
     user_data[chat_id]["history"].append({"role": "assistant", "content": ai_text})
     return ai_text
 
@@ -187,7 +187,7 @@ async def process_translation(callback_query: types.CallbackQuery):
                 temperature=0.3,
             )
         )
-        russian_translation = response.choices.message.content
+        russian_translation = response.choices[0].message.content
         await bot.send_message(
             chat_id=callback_query.message.chat.id,
             text=f"🔰 *Перевод:* {russian_translation}",
