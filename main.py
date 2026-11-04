@@ -7,6 +7,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from groq import Groq
 import edge_tts
+from aiohttp import web
 
 # ==========================================
 # 🔑 ВСТАВЬТЕ ВАШИ ТОКЕНЫ В КАВЫЧКИ НИЖЕ:
@@ -19,41 +20,35 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 groq_client = Groq(api_key=GROQ_API_KEY)
 
-# Хранилище истории сообщений и настроек пользователей
 user_data = {}
 
-# Состояния для FSM
 class BotStates(StatesGroup):
     choosing_language = State()
     chatting = State()
 
-# Функция получения настроек голоса и промпта
 def get_lang_settings(lang_code: str):
     if lang_code == "zh":
         return {
             "voice": "zh-CN-XiaoxiaoNeural",
             "prompt": "You are GyertLang, a friendly Chinese language teacher. Chat with the user in Chinese. Keep responses very short (1-3 sentences), simple, and support the user. Ask easy questions to keep the chat going."
         }
-    else:  # en
+    else:
         return {
             "voice": "en-US-EmmaMultilingualNeural",
             "prompt": "You are GyertLang, a friendly English language companion. Talk to the user like a real human being in English. Keep your responses short (2-3 sentences max) and ask follow-up questions. Use a warm tone."
         }
 
-# Функция для генерации ответа от ИИ (Groq Llama 3)
 async def get_llm_response(chat_id: int, user_text: str) -> str:
     if chat_id not in user_data:
         user_data[chat_id] = {"lang": "en", "history": []}
     
     settings = get_lang_settings(user_data[chat_id]["lang"])
     
-    # Если история пустая, добавляем системный промпт
     if not user_data[chat_id]["history"]:
         user_data[chat_id]["history"].append({"role": "system", "content": settings["prompt"]})
     
     user_data[chat_id]["history"].append({"role": "user", "content": user_text})
     
-    # Ограничиваем историю
     if len(user_data[chat_id]["history"]) > 11:
         user_data[chat_id]["history"] = [user_data[chat_id]["history"][0]] + user_data[chat_id]["history"][-10:]
 
@@ -71,7 +66,6 @@ async def get_llm_response(chat_id: int, user_text: str) -> str:
     user_data[chat_id]["history"].append({"role": "assistant", "content": ai_text})
     return ai_text
 
-# Функция для распознавания речи (Groq Whisper)
 async def transcribe_audio(file_path: str) -> str:
     loop = asyncio.get_event_loop()
     with open(file_path, "rb") as audio_file:
@@ -85,7 +79,6 @@ async def transcribe_audio(file_path: str) -> str:
         )
     return transcription
 
-# Клавиатура выбора языка
 def get_language_keyboard():
     builder = InlineKeyboardBuilder()
     builder.button(text="🇬🇧 English (Английский)", callback_data="set_lang_en")
@@ -93,13 +86,11 @@ def get_language_keyboard():
     builder.adjust(1)
     return builder.as_markup()
 
-# Кнопка перевода
 def get_translate_keyboard():
     builder = InlineKeyboardBuilder()
     builder.button(text="👁 Перевести на русский", callback_data="translate_msg")
     return builder.as_markup()
 
-# Команда /start
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.set_state(BotStates.choosing_language)
@@ -109,7 +100,6 @@ async def cmd_start(message: types.Message, state: FSMContext):
         reply_markup=get_language_keyboard()
     )
 
-# Обработка выбора языка
 @dp.callback_query(F.data.startswith("set_lang_"))
 async def process_lang_choice(callback_query: types.CallbackQuery, state: FSMContext):
     lang = callback_query.data.split("_")[-1]
@@ -128,7 +118,6 @@ async def process_lang_choice(callback_query: types.CallbackQuery, state: FSMCon
         parse_mode="Markdown"
     )
 
-# Обработчик текста
 @dp.message(BotStates.chatting, F.text)
 async def handle_text(message: types.Message):
     await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
@@ -139,7 +128,6 @@ async def handle_text(message: types.Message):
         await message.answer("Извини, произошла ошибка на стороне ИИ. Попробуй написать еще раз чуть позже.")
         print(f"Error LLM: {e}")
 
-# Обработчик голоса
 @dp.message(BotStates.chatting, F.voice)
 async def handle_voice(message: types.Message):
     await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
@@ -153,10 +141,8 @@ async def handle_voice(message: types.Message):
         user_text = await transcribe_audio(file_on_disk)
         ai_response = await get_llm_response(message.chat.id, user_text)
         
-        # Сначала отправляем текст
         await message.answer(f"🤖 *GyertLang:* {ai_response}", parse_mode="Markdown", reply_markup=get_translate_keyboard())
         
-        # Пытаемся озвучить
         try:
             await message.bot.send_chat_action(chat_id=message.chat.id, action="record_voice")
             voice_output = f"reply_{file_id}.mp3"
@@ -171,8 +157,7 @@ async def handle_voice(message: types.Message):
             if os.path.exists(voice_output):
                 os.remove(voice_output)
         except Exception as audio_error:
-            print(f"Audio generation skipped/failed (possibly missing ffmpeg): {audio_error}")
-            # Мы не ломаем бота, если не получилось отправить голос, текст пользователь уже получил!
+            print(f"Audio error: {audio_error}")
             
     except Exception as e:
         await message.answer("Не удалось распознать голос. Пожалуйста, попробуй еще раз.")
@@ -181,7 +166,6 @@ async def handle_voice(message: types.Message):
         if os.path.exists(file_on_disk):
             os.remove(file_on_disk)
 
-# Перевод сообщений
 @dp.callback_query(F.data == "translate_msg")
 async def process_translation(callback_query: types.CallbackQuery):
     original_text = callback_query.message.text or callback_query.message.caption
@@ -210,8 +194,30 @@ async def process_translation(callback_query: types.CallbackQuery):
     except Exception as e:
         print(f"Translation error: {e}")
 
+# Простейший веб-сервер, чтобы ублажить Render и занять порт
+async def handle_web(request):
+    return web.Response(text="GyertLang Is Running Live!")
+
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get('/', handle_web)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    # Читем порт, который выдает Render, или по дефолту берем 10000
+    port = int(os.environ.get("PORT", 10000))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    print(f"Веб-сервер успешно запущен на порту {port}")
+
 async def main():
-    print("Бот GyertLang перезапущен с поддержкой языков!")
+    # Жёстко удаляем старые вебхуки/сессии, чтобы убрать ошибку TelegramConflictError
+    await bot.delete_webhook(drop_pending_updates=True)
+    print("Старые сессии Телеграм успешно сброшены!")
+    
+    # Запускаем фоновый веб-сервер для Render
+    asyncio.create_task(start_web_server())
+    
+    print("Бот GyertLang перезапущен и готов к работе!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
