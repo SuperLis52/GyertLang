@@ -15,6 +15,9 @@ from aiohttp import web
 BOT_TOKEN = "8717348381:AAHZT3SYY4ZbERM5HpObMSzGaaQRlOWe2cg"
 GROQ_API_KEY = "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"
 
+# Актуальная и мощная модель Qwen на платформе Groq
+CURRENT_MODEL = "qwen/qwen3.8-27b"
+
 # Инициализация клиентов
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -50,13 +53,13 @@ async def get_llm_response(chat_id: int, user_text: str) -> str:
     user_data[chat_id]["history"].append({"role": "user", "content": user_text})
     
     if len(user_data[chat_id]["history"]) > 11:
-        user_data[chat_id]["history"] = [user_data[chat_id]["history"][0]] + user_data[chat_id]["history"][-10:]
+        user_data[chat_id]["history"] = [user_data[chat_id]["history"]] + user_data[chat_id]["history"][-10:]
 
     loop = asyncio.get_event_loop()
     response = await loop.run_in_executor(
         None, 
         lambda: groq_client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model=CURRENT_MODEL,
             messages=user_data[chat_id]["history"],
             temperature=0.7,
         )
@@ -179,7 +182,7 @@ async def process_translation(callback_query: types.CallbackQuery):
         response = await loop.run_in_executor(
             None, 
             lambda: groq_client.chat.completions.create(
-                model="llama-3.1-8b-instant",
+                model=CURRENT_MODEL,
                 messages=[{"role": "user", "content": translation_prompt}],
                 temperature=0.3,
             )
@@ -214,4 +217,5 @@ async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
+    asyncio.run=main()
     asyncio.run(main())
