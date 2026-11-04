@@ -9,8 +9,8 @@ import edge_tts
 # ==========================================
 # 🔑 ВСТАВЬТЕ ВАШИ ТОКЕНЫ В КАВЫЧКИ НИЖЕ:
 # ==========================================
-BOT_TOKEN = "ВАШ_ТЕЛЕГРАМ_ТОКЕН_ТУТ"
-GROQ_API_KEY = "ВАШ_GROQ_КЛЮЧ_ТУТ"
+BOT_TOKEN = "8717348381:AAHZT3SYY4ZbERM5HpObMSzGaaQRlOWe2cg"
+GROQ_API_KEY = "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"
 
 # Инициализация клиентов
 bot = Bot(token=BOT_TOKEN)
