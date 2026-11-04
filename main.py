@@ -125,8 +125,10 @@ async def handle_text(message: types.Message):
         ai_response = await get_llm_response(message.chat.id, message.text)
         await message.answer(ai_response, reply_markup=get_translate_keyboard())
     except Exception as e:
-        await message.answer("Извини, произошла ошибка на стороне ИИ. Попробуй написать еще раз чуть позже.")
+        # Бот напишет точную причину ошибки прямо вам в чат!
+        await message.answer(f"⚠️ Ошибка ИИ:\n`{str(e)}`邊", parse_mode="Markdown")
         print(f"Error LLM: {e}")
+
 
 @dp.message(BotStates.chatting, F.voice)
 async def handle_voice(message: types.Message):
