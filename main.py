@@ -10,15 +10,13 @@ import edge_tts
 from aiohttp import web
 
 # ==========================================
-# 🔑 ВАШИ ТОКЕНЫ АВТОМАТИЧЕСКИ ПОДСТАВЛЕНЫ:
+# 🔑 ВАШИ ТОКЕНЫ:
 # ==========================================
 BOT_TOKEN = "8717348381:AAHZT3SYY4ZbERM5HpObMSzGaaQRlOWe2cg"
 GROQ_API_KEY = "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"
 
-# Актуальная и мощная модель Qwen на платформе Groq
 CURRENT_MODEL = "qwen/qwen3.8-27b"
 
-# Инициализация клиентов
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 groq_client = Groq(api_key=GROQ_API_KEY)
@@ -53,7 +51,7 @@ async def get_llm_response(chat_id: int, user_text: str) -> str:
     user_data[chat_id]["history"].append({"role": "user", "content": user_text})
     
     if len(user_data[chat_id]["history"]) > 11:
-        user_data[chat_id]["history"] = [user_data[chat_id]["history"][0]] + user_data[chat_id]["history"][-10:]
+        user_data[chat_id]["history"] = [user_data[chat_id]["history"]] + user_data[chat_id]["history"][-10:]
 
     loop = asyncio.get_event_loop()
     response = await loop.run_in_executor(
@@ -129,18 +127,18 @@ async def handle_text(message: types.Message):
         await message.answer(ai_response, reply_markup=get_translate_keyboard())
     except Exception as e:
         await message.answer(f"⚠️ Ошибка ИИ:\n`{str(e)}`", parse_mode="Markdown")
-        print(f"Error LLM: {e}")
 
 @dp.message(BotStates.chatting, F.voice)
 async def handle_voice(message: types.Message):
     await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
     
     file_id = message.voice.file_id
-    file = await bot.get_file(file_id)
     file_on_disk = f"{file_id}.ogg"
-    await bot.download_file(file.file_path, destination=file_on_disk)
     
     try:
+        # ПРАВИЛЬНЫЙ СПОСОБ СКАЧИВАНИЯ ДЛЯ AIOGRAM 3.X:
+        await bot.download(file=file_id, destination=file_on_disk)
+        
         user_text = await transcribe_audio(file_on_disk)
         ai_response = await get_llm_response(message.chat.id, user_text)
         
@@ -164,7 +162,6 @@ async def handle_voice(message: types.Message):
             
     except Exception as e:
         await message.answer(f"⚠️ Ошибка обработки звука:\n`{str(e)}`", parse_mode="Markdown")
-        print(f"Voice General Error: {e}")
     finally:
         if os.path.exists(file_on_disk):
             os.remove(file_on_disk)
@@ -208,7 +205,6 @@ async def start_web_server():
     port = int(os.environ.get("PORT", 10000))
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
-    print(f"Веб-сервер запущен на порту {port}")
 
 async def main():
     await bot.delete_webhook(drop_pending_updates=True)
