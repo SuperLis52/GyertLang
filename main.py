@@ -16,6 +16,7 @@ BOT_TOKEN = "8717348381:AAHZT3SYY4ZbERM5HpObMSzGaaQRlOWe2cg"
 GROQ_API_KEY = "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"
 
 CURRENT_MODEL = "qwen/qwen3.8-27b"
+ORPHEUS_MODEL = "canopylabs/orpheus-v1-english"
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -31,34 +32,29 @@ def get_lang_settings(lang_code: str):
     if lang_code == "zh":
         return {
             "voice": "zh-CN-XiaoxiaoNeural",
-            "prompt": "You are GyertLang, a friendly Chinese language teacher. Chat with the user in Chinese. Keep responses very short (1-3 sentences), simple, and support the user. Ask easy questions to keep the chat going."
+            "prompt": "You are GyertLang, a friendly Chinese language teacher. Chat with the user in Chinese. Keep responses very short (1-2 sentences max), simple, and support the user. Ask easy questions to keep the chat going."
         }
     else:
         return {
             "voice": "en-US-EmmaMultilingualNeural",
-            "prompt": "You are GyertLang, a friendly English language companion. Talk to the user like a real human being in English. Keep your responses short (2-3 sentences max) and ask follow-up questions. Use a warm tone."
+            "prompt": "You are GyertLang, a friendly English language companion. Talk to the user like a real human being in English. Keep your responses exceptionally short (1-2 sentences max) so it fits text-to-speech limits. Ask a quick question."
         }
 
 async def get_llm_response(chat_id: int, user_text: str) -> str:
-    # 🛡 Защита от очистки памяти: создаем структуру, если она исчезла
     if chat_id not in user_data or "lang" not in user_data[chat_id]:
-        user_data[chat_id] = {"lang": "en", "history": []}
+        user_data[chat_id] = {"lang": "en", "voice_mode": "text", "history": []}
     
     if "history" not in user_data[chat_id] or not isinstance(user_data[chat_id]["history"], list):
         user_data[chat_id]["history"] = []
         
     settings = get_lang_settings(user_data[chat_id]["lang"])
     
-    # Гарантируем, что первым сообщением всегда идет объект с правильной ролью system
     if not user_data[chat_id]["history"] or user_data[chat_id]["history"][0].get("role") != "system":
         user_data[chat_id]["history"].insert(0, {"role": "system", "content": settings["prompt"]})
     
-    # Добавляем сообщение пользователя строго в виде объекта
     user_data[chat_id]["history"].append({"role": "user", "content": str(user_text)})
     
-    # Ограничиваем глубину контекста диалога
     if len(user_data[chat_id]["history"]) > 11:
-        # Сохраняем системный промпт на 0-м месте, берем последние 10 сообщений
         user_data[chat_id]["history"] = [user_data[chat_id]["history"][0]] + user_data[chat_id]["history"][-10:]
 
     loop = asyncio.get_event_loop()
@@ -88,11 +84,44 @@ async def transcribe_audio(file_path: str) -> str:
         )
     return transcription
 
-def get_language_keyboard():
+# 🎙 Интеграция Groq Orpheus TTS / Edge-TTS
+async def generate_voice_reply(chat_id: int, text_to_speak: str, output_path: str):
+    lang = user_data.get(chat_id, {}).get("lang", "en")
+    
+    # Для английского используем Groq Orpheus
+    if lang == "en":
+        # Orpheus строго принимает до 200 символов, обрезаем для безопасности
+        short_text = text_to_speak[:195]
+        loop = asyncio.get_event_loop()
+        
+        response = await loop.run_in_executor(
+            None,
+            lambda: groq_client.audio.speech.create(
+                model=ORPHEUS_MODEL,
+                voice="hannah",
+                input=short_text,
+                response_format="wav"
+            )
+        )
+        # Сохраняем полученный поток байт в файл
+        await loop.run_in_executor(None, lambda: response.write_to_file(output_path))
+    else:
+        # Для китайского используем стабильный edge-tts
+        settings = get_lang_settings(lang)
+        communicate = edge_tts.Communicate(text_to_speak, settings["voice"])
+        await communicate.save(output_path)
+
+def get_combined_keyboard(voice_mode="text"):
     builder = InlineKeyboardBuilder()
     builder.button(text="🇬🇧 English (Английский)", callback_data="set_lang_en")
     builder.button(text="🇨🇳 🪐 (Китайский)", callback_data="set_lang_zh")
-    builder.adjust(1)
+    
+    if voice_mode == "voice":
+        builder.button(text="自动化 🟢 Всегда голосом", callback_data="set_mode_text")
+    else:
+        builder.button(text="✍️ Только текст", callback_data="set_mode_voice")
+        
+    builder.adjust(2, 1)
     return builder.as_markup()
 
 def get_translate_keyboard():
@@ -102,11 +131,16 @@ def get_translate_keyboard():
 
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message, state: FSMContext):
+    chat_id = message.chat.id
+    if chat_id not in user_data:
+        user_data[chat_id] = {"lang": "en", "voice_mode": "text", "history": []}
+        
     await state.set_state(BotStates.choosing_language)
     await message.answer(
-        "👋 Привет! Я твой AI-собеседник GyertLang.\n"
-        "Выбери язык, который ты хочешь изучать и практиковать:",
-        reply_markup=get_language_keyboard()
+        "👋 Привет! Я твой AI-собеседник GyertLang.\n\n"
+        "1️⃣ Нажми на флаг, чтобы выбрать изучаемый язык.\n"
+        "2️⃣ Нажми на нижнюю кнопку, чтобы переключить режим ответов (Голос / Текст).",
+        reply_markup=get_combined_keyboard(user_data[chat_id]["voice_mode"])
     )
 
 @dp.callback_query(F.data.startswith("set_lang_"))
@@ -114,53 +148,51 @@ async def process_lang_choice(callback_query: types.CallbackQuery, state: FSMCon
     lang = callback_query.data.split("_")[-1]
     chat_id = callback_query.message.chat.id
     
-    user_data[chat_id] = {"lang": lang, "history": []}
+    if chat_id not in user_data:
+        user_data[chat_id] = {"lang": "en", "voice_mode": "text", "history": []}
+        
+    user_data[chat_id]["lang"] = lang
+    user_data[chat_id]["history"] = []
     await state.set_state(BotStates.chatting)
     
     lang_name = "Английский" if lang == "en" else "Китайский"
+    mode_name = "Голосовой 🎙" if user_data[chat_id]["voice_mode"] == "voice" else "Текстовый ✍️"
+    
     await callback_query.answer()
     await bot.send_message(
         chat_id=chat_id,
-        text=f"🚀 Отлично! Выбран язык: *{lang_name}*.\n\n"
-             f"Отправь мне текстовое или голосовое сообщение на этом языке, и мы начнем общение! "
-             f"Если захочешь сменить язык, просто набери /start",
+        text=f"🚀 Настройки сохранены!\n"
+             f"Язык: *{lang_name}*\n"
+             f"Режим ответов бота: *{mode_name}*\n\n"
+             f"Напиши или наговори мне что-нибудь, и начнем! Для настроек введи /start",
         parse_mode="Markdown"
     )
 
-@dp.message(BotStates.chatting, F.text)
-async def handle_text(message: types.Message):
-    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
-    try:
-        ai_response = await get_llm_response(message.chat.id, message.text)
-        await message.answer(ai_response, reply_markup=get_translate_keyboard())
-    except Exception as e:
-        await message.answer(f"⚠️ Ошибка ИИ:\n`{str(e)}`", parse_mode="Markdown")
+@dp.callback_query(F.data.startswith("set_mode_"))
+async def process_mode_choice(callback_query: types.CallbackQuery):
+    mode = callback_query.data.split("_")[-1]
+    chat_id = callback_query.message.chat.id
+    
+    if chat_id not in user_data:
+        user_data[chat_id] = {"lang": "en", "voice_mode": "text", "history": []}
+        
+    user_data[chat_id]["voice_mode"] = mode
+    await callback_query.answer(f"Режим изменен!")
+    await callback_query.message.edit_reply_markup(reply_markup=get_combined_keyboard(mode))
 
-@dp.message(BotStates.chatting, F.voice)
-async def handle_voice(message: types.Message):
-    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+async def respond_to_user(message: types.Message, text_content: str):
+    chat_id = message.chat.id
+    mode = user_data.get(chat_id, {}).get("voice_mode", "text")
     
-    file_id = message.voice.file_id
-    file_on_disk = f"{file_id}.ogg"
+    ai_response = await get_llm_response(chat_id, text_content)
+    await message.answer(f"🤖 *GyertLang:* {ai_response}", parse_mode="Markdown", reply_markup=get_translate_keyboard())
     
-    try:
-        await bot.download(file=file_id, destination=file_on_disk)
-        
-        user_text = await transcribe_audio(file_on_disk)
-        ai_response = await get_llm_response(message.chat.id, user_text)
-        
-        await message.answer(f"🤖 *GyertLang:* {ai_response}", parse_mode="Markdown", reply_markup=get_translate_keyboard())
-        
+    if mode == "voice" or message.voice is not None:
         try:
-            await message.bot.send_chat_action(chat_id=message.chat.id, action="record_voice")
-            voice_output = f"reply_{file_id}.mp3"
+            await message.bot.send_chat_action(chat_id=chat_id, action="record_voice")
+            voice_output = f"reply_{chat_id}.wav"
             
-            # На всякий случай проверяем существование данных перед озвучкой
-            lang_code = user_data.get(message.chat.id, {}).get("lang", "en")
-            settings = get_lang_settings(lang_code)
-            
-            communicate = edge_tts.Communicate(ai_response, settings["voice"])
-            await communicate.save(voice_output)
+            await generate_voice_reply(chat_id, ai_response, voice_output)
             
             voice_file = types.FSInputFile(voice_output)
             await message.answer_voice(voice_file)
@@ -168,8 +200,26 @@ async def handle_voice(message: types.Message):
             if os.path.exists(voice_output):
                 os.remove(voice_output)
         except Exception as audio_error:
-            print(f"Audio error: {audio_error}")
-            
+            print(f"Audio creation error: {audio_error}")
+
+@dp.message(BotStates.chatting, F.text)
+async def handle_text(message: types.Message):
+    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+    try:
+        await respond_to_user(message, message.text)
+    except Exception as e:
+        await message.answer(f"⚠️ Ошибка ИИ:\n`{str(e)}`", parse_mode="Markdown")
+
+@dp.message(BotStates.chatting, F.voice)
+async def handle_voice(message: types.Message):
+    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+    file_id = message.voice.file_id
+    file_on_disk = f"{file_id}.ogg"
+    
+    try:
+        await bot.download(file=file_id, destination=file_on_disk)
+        user_text = await transcribe_audio(file_on_disk)
+        await respond_to_user(message, user_text)
     except Exception as e:
         await message.answer(f"⚠️ Ошибка обработки звука:\n`{str(e)}`", parse_mode="Markdown")
     finally:
@@ -183,7 +233,7 @@ async def process_translation(callback_query: types.CallbackQuery):
         original_text = original_text.split("GyertLang:")[-1].strip()
 
     await callback_query.answer("Перевожу...")
-    try:
+      try:
         translation_prompt = f"Translate into Russian perfectly and naturally. Return ONLY the translation:\n\n{original_text}"
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
@@ -197,7 +247,7 @@ async def process_translation(callback_query: types.CallbackQuery):
         russian_translation = response.choices[0].message.content
         await bot.send_message(
             chat_id=callback_query.message.chat.id,
-            text=f"🔰 *Перевод:* {russian_translation}",
+            text=f"🔰 Перевод: {russian_translation}",
             parse_mode="Markdown",
             reply_to_message_id=callback_query.message.message_id
         )
@@ -224,3 +274,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
