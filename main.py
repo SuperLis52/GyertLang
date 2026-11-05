@@ -84,16 +84,11 @@ async def transcribe_audio(file_path: str) -> str:
         )
     return transcription
 
-# 🎙 Интеграция Groq Orpheus TTS / Edge-TTS
 async def generate_voice_reply(chat_id: int, text_to_speak: str, output_path: str):
     lang = user_data.get(chat_id, {}).get("lang", "en")
-    
-    # Для английского используем Groq Orpheus
     if lang == "en":
-        # Orpheus строго принимает до 200 символов, обрезаем для безопасности
         short_text = text_to_speak[:195]
         loop = asyncio.get_event_loop()
-        
         response = await loop.run_in_executor(
             None,
             lambda: groq_client.audio.speech.create(
@@ -103,14 +98,11 @@ async def generate_voice_reply(chat_id: int, text_to_speak: str, output_path: st
                 response_format="wav"
             )
         )
-        # Сохраняем полученный поток байт в файл
         await loop.run_in_executor(None, lambda: response.write_to_file(output_path))
     else:
-        # Для китайского используем стабильный edge-tts
         settings = get_lang_settings(lang)
         communicate = edge_tts.Communicate(text_to_speak, settings["voice"])
         await communicate.save(output_path)
-
 def get_combined_keyboard(voice_mode="text"):
     builder = InlineKeyboardBuilder()
     builder.button(text="🇬🇧 English (Английский)", callback_data="set_lang_en")
@@ -233,7 +225,7 @@ async def process_translation(callback_query: types.CallbackQuery):
         original_text = original_text.split("GyertLang:")[-1].strip()
 
     await callback_query.answer("Перевожу...")
-          try:
+    try:
         translation_prompt = f"Translate into Russian perfectly and naturally. Return ONLY the translation:\n\n{original_text}"
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
@@ -244,7 +236,7 @@ async def process_translation(callback_query: types.CallbackQuery):
                 temperature=0.3,
             )
         )
-        russian_translation = response.choices[0].message.content
+        russian_translation = response.choices.message.content
         await bot.send_message(
             chat_id=callback_query.message.chat.id,
             text=f"🔰 Перевод: {russian_translation}",
