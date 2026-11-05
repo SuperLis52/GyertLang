@@ -16,7 +16,6 @@ BOT_TOKEN = "8717348381:AAHZT3SYY4ZbERM5HpObMSzGaaQRlOWe2cg"
 GROQ_API_KEY = "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"
 
 CURRENT_MODEL = "qwen/qwen3.8-27b"
-ORPHEUS_MODEL = "canopylabs/orpheus-v1-english"
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -87,18 +86,8 @@ async def transcribe_audio(file_path: str) -> str:
 async def generate_voice_reply(chat_id: int, text_to_speak: str, output_path: str):
     lang = user_data.get(chat_id, {}).get("lang", "en")
     if lang == "en":
-        short_text = text_to_speak[:195]
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            None,
-            lambda: groq_client.audio.speech.create(
-                model=ORPHEUS_MODEL,
-                voice="hannah",
-                input=short_text,
-                response_format="wav"
-            )
-        )
-        await loop.run_in_executor(None, lambda: response.write_to_file(output_path))
+        communicate = edge_tts.Communicate(text_to_speak, "en-US-EmmaMultilingualNeural")
+        await communicate.save(output_path)
     else:
         settings = get_lang_settings(lang)
         communicate = edge_tts.Communicate(text_to_speak, settings["voice"])
@@ -236,7 +225,7 @@ async def process_translation(callback_query: types.CallbackQuery):
                 temperature=0.3,
             )
         )
-        russian_translation = response.choices.message.content
+        russian_translation = response.choices[0].message.content
         await bot.send_message(
             chat_id=callback_query.message.chat.id,
             text=f"🔰 Перевод: {russian_translation}",
