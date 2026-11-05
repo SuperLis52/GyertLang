@@ -85,6 +85,7 @@ async def transcribe_audio(file_path: str) -> str:
 
 async def generate_voice_reply(chat_id: int, text_to_speak: str, output_path: str):
     lang = user_data.get(chat_id, {}).get("lang", "en")
+    # Переключаем расширение на гарантированно работающий .mp3
     if lang == "en":
         communicate = edge_tts.Communicate(text_to_speak, "en-US-EmmaMultilingualNeural")
         await communicate.save(output_path)
@@ -171,7 +172,7 @@ async def respond_to_user(message: types.Message, text_content: str):
     if mode == "voice" or message.voice is not None:
         try:
             await message.bot.send_chat_action(chat_id=chat_id, action="record_voice")
-            voice_output = f"reply_{chat_id}.wav"
+            voice_output = f"reply_{chat_id}.mp3"
             
             await generate_voice_reply(chat_id, ai_response, voice_output)
             
@@ -225,7 +226,7 @@ async def process_translation(callback_query: types.CallbackQuery):
                 temperature=0.3,
             )
         )
-        russian_translation = response.choices[0].message.content
+        russian_translation = response.choices.message.content
         await bot.send_message(
             chat_id=callback_query.message.chat.id,
             text=f"🔰 Перевод: {russian_translation}",
@@ -251,7 +252,8 @@ async def main():
     await bot.delete_webhook(drop_pending_updates=True)
     asyncio.create_task(start_web_server())
     print("Бот GyertLang перезапущен и готов к работе!")
-    await dp.start_polling(bot)
+    # skip_updates=True жестко очищает очередь, убирая конфликты двух ботов
+    await dp.start_polling(bot, skip_updates=True)
 
 if __name__ == "__main__":
     asyncio.run(main())
