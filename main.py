@@ -233,7 +233,7 @@ async def process_translation(callback_query: types.CallbackQuery):
         original_text = original_text.split("GyertLang:")[-1].strip()
 
     await callback_query.answer("Перевожу...")
-      try:
+          try:
         translation_prompt = f"Translate into Russian perfectly and naturally. Return ONLY the translation:\n\n{original_text}"
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
@@ -274,4 +274,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
