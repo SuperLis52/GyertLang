@@ -36,7 +36,7 @@ def get_lang_settings(lang_code: str):
     else:
         return {
             "voice": "en-US-EmmaMultilingualNeural",
-            "prompt": "You are GyertLang, a friendly English language companion. Talk to the user like a real human being in English. Keep your responses exceptionally short (1-2 sentences max) so it fits text-to-speech limits. Ask a quick question."
+            "prompt": "You are GyertLang, a friendly English language companion. Talk to the user like a real human being in English. Keep your responses exceptionally short (1-2 sentences max). Ask a quick question."
         }
 
 async def get_llm_response(chat_id: int, user_text: str) -> str:
@@ -66,6 +66,7 @@ async def get_llm_response(chat_id: int, user_text: str) -> str:
         )
     )
     
+    # ИСПРАВЛЕНО ПОД SDK 1.7.0
     ai_text = response.choices[0].message.content
     user_data[chat_id]["history"].append({"role": "assistant", "content": ai_text})
     return ai_text
@@ -85,7 +86,6 @@ async def transcribe_audio(file_path: str) -> str:
 
 async def generate_voice_reply(chat_id: int, text_to_speak: str, output_path: str):
     lang = user_data.get(chat_id, {}).get("lang", "en")
-    # Переключаем расширение на гарантированно работающий .mp3
     if lang == "en":
         communicate = edge_tts.Communicate(text_to_speak, "en-US-EmmaMultilingualNeural")
         await communicate.save(output_path)
@@ -176,8 +176,9 @@ async def respond_to_user(message: types.Message, text_content: str):
             
             await generate_voice_reply(chat_id, ai_response, voice_output)
             
+            # Используем answer_audio, чтобы Telegram гарантированно пропустил файл без ffmpeg
             voice_file = types.FSInputFile(voice_output)
-            await message.answer_voice(voice_file)
+            await message.answer_audio(audio=voice_file, title="GyertLang Voice", performer="AI")
             
             if os.path.exists(voice_output):
                 os.remove(voice_output)
@@ -226,7 +227,8 @@ async def process_translation(callback_query: types.CallbackQuery):
                 temperature=0.3,
             )
         )
-        russian_translation = response.choices.message.content
+        # ИСПРАВЛЕНО ПОД SDK 1.7.0
+        russian_translation = response.choices[0].message.content
         await bot.send_message(
             chat_id=callback_query.message.chat.id,
             text=f"🔰 Перевод: {russian_translation}",
@@ -252,7 +254,6 @@ async def main():
     await bot.delete_webhook(drop_pending_updates=True)
     asyncio.create_task(start_web_server())
     print("Бот GyertLang перезапущен и готов к работе!")
-    # skip_updates=True жестко очищает очередь, убирая конфликты двух ботов
     await dp.start_polling(bot, skip_updates=True)
 
 if __name__ == "__main__":
