@@ -226,7 +226,8 @@ async def process_translation(callback_query: types.CallbackQuery):
                 temperature=0.3,
             )
         )
-        russian_translation = response.choices.message.content
+        russian_translation = response.choices[0].message.content
+
         await bot.send_message(
             chat_id=callback_query.message.chat.id,
             text=f"🔰 *Перевод:* {russian_translation}",
