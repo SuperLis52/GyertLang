@@ -6,7 +6,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from groq import Groq
-import edge_tts
+from gtts import gTTS
 from aiohttp import web
 
 # ==========================================
@@ -85,13 +85,14 @@ async def transcribe_audio(file_path: str) -> str:
 
 async def generate_voice_reply(chat_id: int, text_to_speak: str, output_path: str):
     lang = user_data.get(chat_id, {}).get("lang", "en")
-    if lang == "en":
-        communicate = edge_tts.Communicate(text_to_speak, "en-US-EmmaMultilingualNeural")
-        await communicate.save(output_path)
-    else:
-        settings = get_lang_settings(lang)
-        communicate = edge_tts.Communicate(text_to_speak, settings["voice"])
-        await communicate.save(output_path)
+    tts_lang = "zh-CN" if lang == "zh" else "en"
+
+    loop = asyncio.get_event_loop()
+    def _save_tts():
+        tts = gTTS(text=text_to_speak, lang=tts_lang)
+        tts.save(output_path)
+
+    await loop.run_in_executor(None, _save_tts)
 def get_combined_keyboard(voice_mode="text"):
     builder = InlineKeyboardBuilder()
     builder.button(text="🇬🇧 English (Английский)", callback_data="set_lang_en")
