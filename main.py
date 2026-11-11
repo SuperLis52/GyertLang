@@ -13,7 +13,8 @@ from aiohttp import web
 # 🔑 ВАШИ ТОКЕНЫ:
 # ==========================================
 BOT_TOKEN = "8717348381:AAHZT3SYY4ZbERM5HpObMSzGaaQRlOWe2cg"
-GROQ_API_KEY = "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"
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+
 
 CURRENT_MODEL = "qwen/qwen3.8-27b"
 
