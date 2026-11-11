@@ -10,11 +10,10 @@ import edge_tts
 from aiohttp import web
 
 # ==========================================
-# 🔑 ВАШИ ТОКЕНЫ:
+# 🔑 КЛЮЧИ БЕРУТСЯ ИЗ НАСТРОЕК RENDER (ENVIRONMENT):
 # ==========================================
-BOT_TOKEN = "8717348381:AAHZT3SYY4ZbERM5HpObMSzGaaQRlOWe2cg"
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
-
 
 CURRENT_MODEL = "qwen/qwen3.8-27b"
 
@@ -67,7 +66,6 @@ async def get_llm_response(chat_id: int, user_text: str) -> str:
         )
     )
     
-    # ИСПРАВЛЕНО ПОД SDK 1.7.0
     ai_text = response.choices[0].message.content
     user_data[chat_id]["history"].append({"role": "assistant", "content": ai_text})
     return ai_text
@@ -100,9 +98,9 @@ def get_combined_keyboard(voice_mode="text"):
     builder.button(text="🇨🇳 🪐 (Китайский)", callback_data="set_lang_zh")
     
     if voice_mode == "voice":
-        builder.button(text="自动化 🟢 Всегда голосом", callback_data="set_mode_text")
+        builder.button(text="🟢 Всегда голосом (ВКЛ)", callback_data="set_mode_text")
     else:
-        builder.button(text="✍️ Только текст", callback_data="set_mode_voice")
+        builder.button(text="✍️ Только текст (ВКЛ)", callback_data="set_mode_voice")
         
     builder.adjust(2, 1)
     return builder.as_markup()
@@ -160,7 +158,7 @@ async def process_mode_choice(callback_query: types.CallbackQuery):
         user_data[chat_id] = {"lang": "en", "voice_mode": "text", "history": []}
         
     user_data[chat_id]["voice_mode"] = mode
-    await callback_query.answer(f"Режим изменен!")
+    await callback_query.answer("Режим изменен!")
     await callback_query.message.edit_reply_markup(reply_markup=get_combined_keyboard(mode))
 
 async def respond_to_user(message: types.Message, text_content: str):
@@ -177,14 +175,13 @@ async def respond_to_user(message: types.Message, text_content: str):
             
             await generate_voice_reply(chat_id, ai_response, voice_output)
             
-            # Используем answer_audio, чтобы Telegram гарантированно пропустил файл без ffmpeg
             voice_file = types.FSInputFile(voice_output)
             await message.answer_audio(audio=voice_file, title="GyertLang Voice", performer="AI")
             
             if os.path.exists(voice_output):
                 os.remove(voice_output)
         except Exception as audio_error:
-            print(f"Audio creation error: {audio_error}")
+            await message.answer(f"⚠️ Ошибка озвучки:\n`{str(audio_error)}`", parse_mode="Markdown")
 
 @dp.message(BotStates.chatting, F.text)
 async def handle_text(message: types.Message):
@@ -228,16 +225,19 @@ async def process_translation(callback_query: types.CallbackQuery):
                 temperature=0.3,
             )
         )
-        # ИСПРАВЛЕНО ПОД SDK 1.7.0
-        russian_translation = response.choices[0].message.content
+        russian_translation = response.choices.message.content
         await bot.send_message(
             chat_id=callback_query.message.chat.id,
-            text=f"🔰 Перевод: {russian_translation}",
+            text=f"🔰 *Перевод:* {russian_translation}",
             parse_mode="Markdown",
             reply_to_message_id=callback_query.message.message_id
         )
     except Exception as e:
-        print(f"Translation error: {e}")
+        await bot.send_message(
+            chat_id=callback_query.message.chat.id,
+            text=f"⚠️ Ошибка перевода:\n`{str(e)}`",
+            parse_mode="Markdown"
+        )
 
 async def handle_web(request):
     return web.Response(text="GyertLang Is Running Live!")
